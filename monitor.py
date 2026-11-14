@@ -33,6 +33,17 @@ def yahoo(symbol, rng="2y"):
 
 
 def fred(series, start):
+    import os
+    key = os.environ.get("FRED_API_KEY")
+    if key:  # APIキーがあればAPI経由（CSV直取得より安定）
+        j = json.loads(get(f"https://api.stlouisfed.org/fred/series/observations?series_id={series}&api_key={key}&file_type=json&observation_start={start}", timeout=30))
+        out = []
+        for o in j["observations"]:
+            try:
+                out.append((o["date"], float(o["value"])))
+            except ValueError:
+                pass
+        return out
     txt = get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}&cosd={start}", timeout=20, retries=2)
     out = []
     for line in txt.splitlines()[1:]:

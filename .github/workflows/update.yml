@@ -20,6 +20,7 @@ jobs:
         run: python monitor.py
         env:
           PYTHONIOENCODING: utf-8
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
       - name: 公開ページを更新
         run: |
           cp dashboard.html index.html

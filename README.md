@@ -8,3 +8,5 @@
 - 取得に失敗した指標は「取得失敗」と表示（他の指標は動く）
 - 注意: 2026-11-14時点、この PC からは FRED に接続できず(タイムアウト)、HYスプレッドと日米金利差は取得失敗。GitHub Actions 等からは取得できる見込み
 - 未実装: バフェット指標、FINRA信用買い残、日本株(騰落レシオ・裁定買い残)
+- FREDはCSV直取得がタイムアウトするため、環境変数 FRED_API_KEY（無料APIキー）があればAPI経由で取得する。GitHubではリポジトリのSecret `FRED_API_KEY` に登録（2026-11-14時点は未登録）
+- 公開ページ: https://sin88123451.github.io/crash-warning-monitor/ （公開リポジトリ sin88123451/crash-warning-monitor、月〜金 7:30 日本時間に Actions で更新）
