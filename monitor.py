@@ -10,6 +10,17 @@ UA = {"User-Agent": "Mozilla/5.0"}
 OK, WARN, BAD, NA = "ok", "warn", "bad", "na"
 
 
+def load_env():
+    """10_調査部\.env があれば読む（ローカル実行用。GitHub上ではSecretを使う）"""
+    import os
+    f = HERE.parent / ".env"
+    if f.exists():
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if "=" in line and not line.startswith("#"):
+                k, _, v = line.partition("=")
+                os.environ.setdefault(k.strip(), v.strip().strip('"'))
+
+
 def get(url, timeout=25, retries=2):
     last = None
     for _ in range(retries):
@@ -99,6 +110,7 @@ def safe(fn):
 
 
 def main():
+    load_env()
     items = []
     today = dt.date.today()
 
