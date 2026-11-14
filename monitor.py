@@ -80,6 +80,26 @@ def treasury(years):
     return res
 
 
+def touraku25():
+    """日経225JPの日次データから東証の25日騰落レシオを取得。戻り値: [(日付, 値)]"""
+    txt = get("https://nikkei225jp.com/_data/_nfsDATA/data_DAY/daily2year.json", timeout=30)
+    out = []
+    for line in txt.splitlines():
+        line = line.strip().rstrip(",")
+        if not (line.startswith("[") and line.endswith("]")) or line.startswith("[["):
+            continue
+        c = [x.strip().strip('"') for x in line[1:-1].split(",")]
+        try:
+            ts, v = float(c[0]), float(c[7])
+        except (ValueError, IndexError):
+            continue
+        if v > 0:
+            out.append((dt.datetime.fromtimestamp(ts / 1000, dt.timezone.utc).astimezone(dt.timezone(dt.timedelta(hours=9))).strftime("%Y-%m-%d"), v))
+    if len(out) < 30:
+        raise ValueError("騰落レシオのデータが不足")
+    return out
+
+
 def shiller_pe():
     h = get("https://www.multpl.com/shiller-pe")
     m = re.search(r'id="current".*?([\d]{2}\.\d{1,2})', h, re.S)
@@ -227,6 +247,21 @@ def main():
         st = BAD if ch <= -0.5 else WARN if ch <= -0.25 else OK
         items.append(item("日米10年債利回り差", v, st, f"3か月前比 {ch:+.2f}pt", gap, "%", asof=gap[-1][0], howto=how))
 
+    # 7. 日経 騰落レシオ（25日）
+    tr = safe(touraku25)
+    how = "日経平均が上がっているのに騰落レシオが120%超→100%割れへ急落＝内部の買いエネルギー切れ"
+    if isinstance(tr, Exception):
+        items.append(item("日本株 騰落レシオ（25日）", None, NA, f"取得失敗（nikkei225jp.com）: {tr}", howto=how))
+    else:
+        v = tr[-1][1]; mx = max(x for _, x in tr[-30:])
+        if mx >= 120 and v < 100:
+            st, note = BAD, f"直近30営業日で{mx:.0f}%まで過熱→100%割れ。買いエネルギー切れの兆し"
+        elif v >= 120:
+            st, note = WARN, "120%超の過熱圏（ここから急落に転じるかを注視）"
+        else:
+            st, note = OK, f"過熱(120%超)なし。直近30営業日の最高 {mx:.0f}%"
+        items.append(item("日本株 騰落レシオ（25日）", v, st, note, tr, "%", fmt="{:.1f}", asof=tr[-1][0], howto=how))
+
     out = dict(updated=dt.datetime.now().strftime("%Y-%m-%d %H:%M"), items=items)
     (HERE / "data.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     (HERE / "dashboard.html").write_text(render(out), encoding="utf-8")
@@ -266,6 +301,10 @@ GUIDE = {
         why="長期金利−短期金利。短期のほうが高い（マイナス）のは景気後退の予兆。大事なのは「逆転した後に戻る」局面。",
         where=[("FRED: T10Y2Y", FRED + "T10Y2Y"), ("TradingView: US10Y-US02Y", TV + "FRED-T10Y2Y/")],
         sign="マイナス圏（逆イールド）からプラス圏（0%以上）へ急激に戻った直後が、過去幾度となく暴落・景気後退が始まったタイミング。"),
+    "日本株 騰落レシオ（25日）": dict(
+        why="東証の値上がり銘柄数÷値下がり銘柄数（25日合計）。日経平均の動きの裏で、個別株の買いの勢いが保たれているかを見る。",
+        where=[("世界の株価（nikkei225jp.com）騰落レシオ", "https://nikkei225jp.com/data/touraku.php")],
+        sign="日経平均が上がっているのに、騰落レシオが120%超の過熱から100%割れへ急落し始めたら、内部の買いエネルギー切れのサイン。※本ツールの値は同サイトのデータを読み取っており、サイト側の仕様変更で取得できなくなることがある。"),
     "日米10年債利回り差": dict(
         why="ドル円を動かす日米の金利差。差が縮むと急速な円高になりやすく、日本の輸出企業の株に逆風になる。",
         where=[("TradingView: US10Y-JP10Y と入力", TV + "TVC-US10Y/")],
