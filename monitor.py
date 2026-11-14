@@ -21,11 +21,11 @@ def load_env():
                 os.environ.setdefault(k.strip(), v.strip().strip('"'))
 
 
-def get(url, timeout=25, retries=2):
+def get(url, timeout=25, retries=2, referer=None):
     last = None
     for _ in range(retries):
         try:
-            return ur.urlopen(ur.Request(url, headers=UA), timeout=timeout).read().decode("utf-8", "replace")
+            return ur.urlopen(ur.Request(url, headers={**UA, **({'Referer': referer} if referer else {})}), timeout=timeout).read().decode("utf-8", "replace")
         except Exception as e:  # noqa
             last = e
             time.sleep(1)
@@ -78,6 +78,25 @@ def treasury(years):
             if d and a and b:
                 res[d.group(1)] = (float(a.group(1)), float(b.group(1)))
     return res
+
+
+def arbitrage_buy():
+    """裁定買い残（金額、週次）。戻り値: [(日付, 兆円)]。nikkei225jp.com の saitei ページ用データを読む"""
+    txt = get("https://nikkei225jp.com/_data/_nfsDATA/json_DAY/daily_saitei.json?498512", timeout=30, referer="https://nikkei225jp.com/data/saitei.php")
+    out = []
+    for line in txt.splitlines():
+        line = line.strip().rstrip(",")
+        if not (line.startswith("[") and line.endswith("]")) or line.startswith("[["):
+            continue
+        c = [x.strip().strip('"') for x in line[1:-1].split(",")]
+        try:
+            ts, v = float(c[0]), float(c[8])
+        except (ValueError, IndexError):
+            continue
+        out.append((dt.datetime.fromtimestamp(ts / 1000, dt.timezone.utc).astimezone(dt.timezone(dt.timedelta(hours=9))).strftime("%Y-%m-%d"), v / 1_000_000))
+    if len(out) < 20:
+        raise ValueError("裁定買い残のデータが不足")
+    return out
 
 
 def touraku25():
@@ -262,6 +281,23 @@ def main():
             st, note = OK, f"過熱(120%超)なし。直近30営業日の最高 {mx:.0f}%"
         items.append(item("日本株 騰落レシオ（25日）", v, st, note, tr, "%", fmt="{:.1f}", asof=tr[-1][0], howto=how))
 
+    # 8. 裁定買い残
+    ab = safe(arbitrage_buy)
+    how = "ピークアウトして減少に転じると、海外勢の日本株売りが始まった合図"
+    if isinstance(ab, Exception):
+        items.append(item("裁定買い残（日本株）", None, NA, f"取得失敗（nikkei225jp.com）: {ab}", howto=how))
+    else:
+        w = ab[-52:]; v = w[-1][1]
+        peak_i = max(range(len(w)), key=lambda k: w[k][1]); peak = w[peak_i][1]
+        drop = (1 - v / peak) * 100; peak_recent = peak_i >= len(w) - 13
+        if peak_recent and drop >= 15:
+            st, note = BAD, f"直近13週のピーク{peak:.2f}兆円（{w[peak_i][0]}）から{drop:.0f}%減。ピークアウトの兆し"
+        elif drop >= 7:
+            st, note = WARN, f"52週ピーク{peak:.2f}兆円（{w[peak_i][0]}）から{drop:.0f}%減"
+        else:
+            st, note = OK, f"52週ピーク{peak:.2f}兆円（{w[peak_i][0]}）から{drop:.0f}%減。ピーク圏を維持"
+        items.append(item("裁定買い残（日本株）", v, st, note, ab, "兆円", asof=ab[-1][0], howto=how))
+
     out = dict(updated=dt.datetime.now().strftime("%Y-%m-%d %H:%M"), items=items)
     (HERE / "data.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     (HERE / "dashboard.html").write_text(render(out), encoding="utf-8")
@@ -305,6 +341,10 @@ GUIDE = {
         why="東証の値上がり銘柄数÷値下がり銘柄数（25日合計）。日経平均の動きの裏で、個別株の買いの勢いが保たれているかを見る。",
         where=[("世界の株価（nikkei225jp.com）騰落レシオ", "https://nikkei225jp.com/data/touraku.php")],
         sign="日経平均が上がっているのに、騰落レシオが120%超の過熱から100%割れへ急落し始めたら、内部の買いエネルギー切れのサイン。※本ツールの値は同サイトのデータを読み取っており、サイト側の仕様変更で取得できなくなることがある。"),
+    "裁定買い残（日本株）": dict(
+        why="裁定取引（先物売り＋現物買い）に伴う現物株の買い残高。海外勢の先物買いに連動して積み上がるため、海外勢の日本株への姿勢を映す。",
+        where=[("世界の株価（nikkei225jp.com）裁定買い残", "https://nikkei225jp.com/data/saitei.php"), ("トレーダーズ・ウェブ／株探の市場ニュース（毎週公表）", "https://kabutan.jp/")],
+        sign="裁定買い残がピークアウトして減少に転じると、海外勢の日本株売りが始まった合図。※本ツールは週次の金額（兆円）を同サイトから読み取っており、サイト仕様が変わると取得できなくなることがある。"),
     "日米10年債利回り差": dict(
         why="ドル円を動かす日米の金利差。差が縮むと急速な円高になりやすく、日本の輸出企業の株に逆風になる。",
         where=[("TradingView: US10Y-JP10Y と入力", TV + "TVC-US10Y/")],

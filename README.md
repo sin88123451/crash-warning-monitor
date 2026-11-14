@@ -9,6 +9,7 @@
 - 注意: 2026-11-14時点、この PC からは FRED に接続できず(タイムアウト)、HYスプレッドと日米金利差は取得失敗。GitHub Actions 等からは取得できる見込み
 - バフェット指標 = ウィルシャー5000(Yahoo ^W5000) ÷ 名目GDP(FRED)。公表値とは多少ずれる近似（2026-11-14追加）
 - 日本株 騰落レシオ(25日) = nikkei225jp.com の daily2year.json（同サイト内部のデータファイル）を読む。サイト仕様が変わると取得失敗になる（2026-11-14追加）
-- 未実装: FINRA信用買い残、日本株の裁定買い残・信用評価損益率
+- 未実装: FINRA信用買い残、日本株の信用評価損益率
 - FREDはCSV直取得がタイムアウトするため、環境変数 FRED_API_KEY（無料APIキー）があればAPI経由で取得する。GitHubではリポジトリのSecret `FRED_API_KEY` に登録（2026-11-14時点は未登録）
 - 公開ページ: https://sin88123451.github.io/crash-warning-monitor/ （公開リポジトリ sin88123451/crash-warning-monitor、月〜金 7:30 日本時間に Actions で更新）
+- 裁定買い残 = nikkei225jp.com の saitei ページ用データ(週次・金額)。取得にはReferer指定が必要（2026-11-14追加）
