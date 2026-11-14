@@ -178,7 +178,7 @@ def main():
         items.append(item("バフェット指標", v, st, "200%以上で危険、150%以上で注意（ウィルシャー5000÷名目GDPの近似値）", bi, fmt="{:.0f}", unit="%", asof=bi[-1][0], howto=how))
 
     # 5. 逆イールド解消 / 6. 日米金利差
-    ty = safe(lambda: treasury([today.year - 1, today.year]))
+    ty = safe(lambda: treasury(range(today.year - 4, today.year + 1)))
     how = "マイナス圏からプラス圏へ戻った直後が景気後退・暴落の始まりになりやすい"
     if isinstance(ty, Exception) or not ty:
         items.append(item("逆イールド解消（10年−2年）", None, NA, f"取得失敗（米財務省）: {ty}", howto=how))
@@ -189,14 +189,24 @@ def main():
         us10 = [(d, ty[d][1]) for d in ds]
         v = spread[-1][1]
         last = dt.date.fromisoformat(spread[-1][0])
-        yr = [x for d, x in spread if dt.date.fromisoformat(d) >= last - dt.timedelta(days=365)]
-        neg_recent = [d for d, x in spread if x < 0 and dt.date.fromisoformat(d) >= last - dt.timedelta(days=180)]
+        # 直近の「逆イールドが解消した日」（マイナス→最初のプラス）を探す
+        resolved = None
+        for (d0, v0), (d1, v1) in zip(spread, spread[1:]):
+            if v0 < 0 <= v1:
+                resolved = dt.date.fromisoformat(d1)
         if v < 0:
             st, note = WARN, "現在も逆イールド中（まだ解消前）"
-        elif min(yr) < 0:
-            st, note = BAD, "過去1年に逆転あり、直近でプラス圏へ復帰" if neg_recent else "1年以内に逆転→解消済み（景気後退入りの警戒期間）"
+        elif resolved is None:
+            st, note = OK, "取得期間内に逆イールドなし"
         else:
-            st, note = OK, "逆イールドなし"
+            days = (last - resolved).days
+            ago = f"{days // 30}か月前" if days >= 60 else f"{days}日前"
+            if days <= 180:
+                st, note = BAD, f"逆イールド解消の直後（{resolved}・{ago}）。最も警戒する局面"
+            elif days <= 730:
+                st, note = WARN, f"解消から2年以内（{resolved}・{ago}）。景気後退・暴落の警戒期間"
+            else:
+                st, note = OK, f"直近の解消は {resolved}（{ago}）。2年超が経過"
         items.append(item("逆イールド解消（10年−2年）", v, st, note, spread, "%", asof=spread[-1][0], howto=how))
 
     jp = safe(lambda: fred("IRLTLT01JPM156N", (today - dt.timedelta(days=500)).isoformat()))
