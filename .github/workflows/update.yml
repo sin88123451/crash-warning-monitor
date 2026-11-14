@@ -2,8 +2,13 @@ name: update
 
 on:
   schedule:
-    - cron: "30 22 * * 0-4"   # 月〜金 7:30（日本時間）
+    - cron: "0 22 * * 6"   # 毎週日曜 7:00（日本時間）
   workflow_dispatch:
+    inputs:
+      test_failure:
+        description: "失敗通知メールのテスト（わざと失敗させる）"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -13,14 +18,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: 通知テスト用にわざと失敗
+        if: ${{ github.event.inputs.test_failure == 'true' }}
+        run: exit 1
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: 指標を取得してダッシュボードを作る
         run: python monitor.py
         env:
           PYTHONIOENCODING: utf-8
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+
       - name: 公開ページを更新
         run: |
           cp dashboard.html index.html
@@ -30,3 +42,20 @@ jobs:
           git add data.json dashboard.html index.html .nojekyll
           git diff --cached --quiet || git commit -m "更新 $(date -u +%Y-%m-%d)"
           git push
+
+      - name: 結果をメールで送る
+        if: success()
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: python notify.py success
+
+      - name: 失敗したらメールで通知
+        if: failure()
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python notify.py failure

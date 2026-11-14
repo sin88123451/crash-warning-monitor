@@ -11,5 +11,6 @@
 - 日本株 騰落レシオ(25日) = nikkei225jp.com の daily2year.json（同サイト内部のデータファイル）を読む。サイト仕様が変わると取得失敗になる（2026-11-14追加）
 - 未実装: FINRA信用買い残、日本株の信用評価損益率
 - FREDはCSV直取得がタイムアウトするため、環境変数 FRED_API_KEY（無料APIキー）があればAPI経由で取得する。GitHubではリポジトリのSecret `FRED_API_KEY` に登録（2026-11-14時点は未登録）
-- 公開ページ: https://sin88123451.github.io/crash-warning-monitor/ （公開リポジトリ sin88123451/crash-warning-monitor、月〜金 7:30 日本時間に Actions で更新）
+- 公開ページ: https://sin88123451.github.io/crash-warning-monitor/ （公開リポジトリ sin88123451/crash-warning-monitor、毎週日曜 7:00 日本時間に Actions で更新し、結果をメール通知）
 - 裁定買い残 = nikkei225jp.com の saitei ページ用データ(週次・金額)。取得にはReferer指定が必要（2026-11-14追加）
+- メール通知: notify.py。Secret は SMTP_USER / SMTP_PASSWORD（一括更新ツール set_mail_password.ps1 で登録）と MAIL_TO（送信先。公開リポジトリのためSecretで渡す）
