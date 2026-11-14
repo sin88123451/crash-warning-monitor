@@ -11,7 +11,7 @@ OK, WARN, BAD, NA = "ok", "warn", "bad", "na"
 
 
 def load_env():
-    """10_調査部\.env があれば読む（ローカル実行用。GitHub上ではSecretを使う）"""
+    """10_調査部の.env があれば読む（ローカル実行用。GitHub上ではSecretを使う）"""
     import os
     f = HERE.parent / ".env"
     if f.exists():
@@ -162,6 +162,20 @@ def main():
     else:
         st = BAD if pe >= 35 else WARN if pe >= 30 else OK
         items.append(item("シラーPER（CAPE）", pe, st, "35倍以上で危険、30倍以上で注意", fmt="{:.1f}", unit="倍", asof=str(today), howto=how))
+
+    # 4b. バフェット指標（ウィルシャー5000 ÷ 名目GDP。市場全体の時価総額/GDPの近似）
+    w5 = safe(lambda: yahoo("%5EW5000", "2y")); gdp = safe(lambda: fred("GDP", (today - dt.timedelta(days=900)).isoformat()))
+    how = "200%超は歴史的な超割高圏。暴落時の下落幅が大きくなる目安"
+    if isinstance(w5, Exception) or isinstance(gdp, Exception) or not gdp:
+        items.append(item("バフェット指標", None, NA, f"取得失敗: {w5 if isinstance(w5, Exception) else gdp}", howto=how))
+    else:
+        def gdp_at(d):  # その日に公表済みの直近四半期GDP（10億ドル）
+            c = [v for gd, v in gdp if gd <= d]
+            return c[-1] if c else gdp[0][1]
+        bi = [(d, c / gdp_at(d) * 100) for d, c in w5]
+        v = bi[-1][1]
+        st = BAD if v >= 200 else WARN if v >= 150 else OK
+        items.append(item("バフェット指標", v, st, "200%以上で危険、150%以上で注意（ウィルシャー5000÷名目GDPの近似値）", bi, fmt="{:.0f}", unit="%", asof=bi[-1][0], howto=how))
 
     # 5. 逆イールド解消 / 6. 日米金利差
     ty = safe(lambda: treasury([today.year - 1, today.year]))
