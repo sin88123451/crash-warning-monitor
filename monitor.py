@@ -224,6 +224,59 @@ def main():
         print(f"[{i['status']:4}] {i['name']}: {i['value']}  {i['note']}")
 
 
+# ---------- 各指標の見方（何のために・どこを見るか） ----------
+FRED = "https://fred.stlouisfed.org/series/"
+TV = "https://www.tradingview.com/symbols/"
+GUIDE = {
+    "ハイイールド債スプレッド": dict(
+        why="信用リスクの先行指標。低格付け企業の債券が国債よりどれだけ高い利回りを求められているか＝「お金を貸す側の不安」を表す。株より先に悪化しやすい。",
+        where=[("FRED: BAMLH0A0HYM2", FRED + "BAMLH0A0HYM2"), ("TradingView: FRED:BAMLH0A0HYM2", TV + "FRED-BAMLH0A0HYM2/")],
+        sign="平時は3%前後。3.5〜4.0%超へ急上昇し始めたら警戒。株が最高値圏なのにこれが上がり始めたら、プロが逃げ出しているサイン。（FREDは直近3年分の表示）"),
+    "VIX（恐怖指数）": dict(
+        why="S&P500オプションから計算される、市場の「今後の揺れの予想」。低いほど市場が油断している。SKEWとセットで見る。",
+        where=[("TradingView: VIX", TV + "CBOE-VIX/"), ("Yahoo Finance: ^VIX", "https://finance.yahoo.com/quote/%5EVIX")],
+        sign="12〜15の低水準は油断のサイン。この状態でSKEWが跳ね上がっていないかを必ず確認する。"),
+    "SKEW（ブラックスワン指数）": dict(
+        why="大暴落に備える保険（プット）がどれだけ買われているか。機関投資家の「暴落への備え」を映す。",
+        where=[("TradingView: SKEW", TV + "CBOE-SKEW/"), ("Yahoo Finance: ^SKEW", "https://finance.yahoo.com/quote/%5ESKEW")],
+        sign="VIXが12〜15の低水準なのに、SKEWが145〜150超に跳ね上がっていたら「裏で機関投資家が暴落保険を買い集めている」合図。"),
+    "市場の広がり（RSP/SPY）": dict(
+        why="等金額S&P500(RSP)÷通常のS&P500(SPY)。値上がりが一部の超大型株だけか、500社に広がっているかを見る。",
+        where=[("TradingView: 検索窓に RSP/SPY と入力してEnter", TV + "AMEX-RSP/")],
+        sign="チャートが右肩下がりなら危険。「一部の超大型AI株だけが指数を押し上げ、残りの490社は置いてけぼり（相場末期）」のサイン。"),
+    "シラーPER（CAPE）": dict(
+        why="過去10年の平均利益で割った株価収益率。景気変動をならした割高・割安の判定で、暴落時の下落幅の目安になる（タイミングは測れない）。",
+        where=[("Multpl.com（トップに表示。検索不要）", "https://www.multpl.com/shiller-pe")],
+        sign="40倍前後は歴史的な超割高圏（1999年ITバブルのピークは約44倍）。割高なほど、暴落したときの下落幅が大きくなりやすい。"),
+    "バフェット指標": dict(
+        why="株式市場全体の時価総額÷名目GDP。経済の規模に対して株がどれだけ膨らんでいるかを見る。",
+        where=[("検索キーワード: Current Market Valuation（公表値の確認用）", "https://www.google.com/search?q=Current+Market+Valuation+Buffett+Indicator")],
+        sign="200%超は歴史的な超割高圏。暴落時の下落幅が大きくなる目安。※本ツールの値は ウィルシャー5000÷GDP の近似で、公表値とは数十%ずれることがある。"),
+    "逆イールド解消（10年−2年）": dict(
+        why="長期金利−短期金利。短期のほうが高い（マイナス）のは景気後退の予兆。大事なのは「逆転した後に戻る」局面。",
+        where=[("FRED: T10Y2Y", FRED + "T10Y2Y"), ("TradingView: US10Y-US02Y", TV + "FRED-T10Y2Y/")],
+        sign="マイナス圏（逆イールド）からプラス圏（0%以上）へ急激に戻った直後が、過去幾度となく暴落・景気後退が始まったタイミング。"),
+    "日米10年債利回り差": dict(
+        why="ドル円を動かす日米の金利差。差が縮むと急速な円高になりやすく、日本の輸出企業の株に逆風になる。",
+        where=[("TradingView: US10Y-JP10Y と入力", TV + "TVC-US10Y/")],
+        sign="この差が急低下し始めたら「急速な円高（＝日本株の輸出企業への逆風）」の警戒サイン。※本ツールは日本側が月次データのため、日次のチャートはTradingViewで確認する。"),
+}
+MANUAL = [dict(
+    name="米国信用買い残（マージン・デット）", where=[("検索: FINRA Margin Statistics", "https://www.google.com/search?q=FINRA+Margin+Statistics")],
+    why="投資家が借金して買っている株の残高。レバレッジ（借金の膨らみ）の度合いを表す。",
+    sign="毎月下旬に月次データを無料公開。過去最高水準まで膨れ上がったあと、前月比で減少に転じた瞬間が「レバレッジの巻き戻し（強制売却）」開始のサイン。", note="自動取得は未対応のため、手動で確認する。")]
+
+
+def guide_html(name):
+    g = GUIDE.get(name)
+    if not g:
+        return ""
+    links = " ／ ".join(f'<a href="{u}" target="_blank" rel="noopener">{t}</a>' for t, u in g["where"])
+    return (f'<details class="g" open><summary>何のために・どこを見るか</summary>'
+            f'<p><b>何のために</b><br>{g["why"]}</p><p><b>どこを見るか</b><br>{links}</p>'
+            f'<p><b>見るべきポイント（危険サイン）</b><br>{g["sign"]}</p></details>')
+
+
 # ---------- HTML ----------
 LABEL = {OK: "平常", WARN: "注意", BAD: "危険", NA: "取得失敗"}
 
@@ -244,7 +297,11 @@ def render(d):
         color = {OK: "var(--ok)", WARN: "var(--warn)", BAD: "var(--bad)", NA: "var(--mute)"}[i["status"]]
         cards += f"""<section class="card {i['status']}"><div class="top"><h2>{i['name']}</h2><span class="badge">{LABEL[i['status']]}</span></div>
 <div class="val">{i['value'] or '—'}</div><div class="note">{i['note']}</div>{spark(i['series'], color)}
-<div class="how">{i['howto']}</div><div class="asof">{('データ日付 ' + i['asof']) if i['asof'] else ''}</div></section>"""
+{guide_html(i['name'])}<div class="asof">{('データ日付 ' + i['asof']) if i['asof'] else ''}</div></section>"""
+    manual = "".join(
+        f'''<section class="card na"><div class="top"><h2>{m['name']}</h2><span class="badge">手動確認</span></div><div class="note">{m['note']}</div>
+<details class="g" open><summary>何のために・どこを見るか</summary><p><b>何のために</b><br>{m['why']}</p><p><b>どこを見るか</b><br>{" ／ ".join(f'<a href="{u}" target="_blank" rel="noopener">{t}</a>' for t, u in m['where'])}</p>
+<p><b>見るべきポイント（危険サイン）</b><br>{m['sign']}</p></details></section>''' for m in MANUAL)
     return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>暴落警戒モニター</title><style>
 :root{{--bg:#f6f7f9;--fg:#111;--card:#fff;--mute:#6b7280;--ok:#16a34a;--warn:#d97706;--bad:#dc2626;--line:#e5e7eb}}
@@ -258,10 +315,11 @@ main{{max-width:980px;margin:0 auto;padding:16px}}h1{{font-size:22px;margin:8px 
 .badge{{font-size:12px;padding:1px 9px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}}
 .ok .badge{{color:var(--ok)}}.warn .badge{{color:var(--warn)}}.bad .badge{{color:var(--bad)}}.na .badge{{color:var(--mute)}}
 .val{{font-size:30px;font-weight:700;margin:4px 0}}.note{{font-size:13px}}.sp{{width:100%;height:48px;margin-top:6px}}
-.how,.asof{{font-size:12px;color:var(--mute);margin-top:6px}}footer{{color:var(--mute);font-size:12px;margin-top:18px}}
+.how,.asof{{font-size:12px;color:var(--mute);margin-top:6px}}details.g{{margin-top:8px;font-size:13px}}details.g summary{{cursor:pointer;color:var(--mute)}}details.g p{{margin:6px 0}}a{{color:inherit;text-decoration:underline}}.sec{{font-size:16px;margin:22px 0 8px}}footer{{color:var(--mute);font-size:12px;margin-top:18px}}
 </style></head><body><main><h1>暴落警戒モニター</h1>
 <div class="sum">{head}（危険 {cnt[BAD]} ／ 注意 {cnt[WARN]} ／ 平常 {cnt[OK]} ／ 取得失敗 {cnt[NA]}）　更新 {d['updated']}</div>
 <div class="grid">{cards}</div>
+<h2 class="sec">自動取得していない指標（手動で確認）</h2><div class="grid">{manual}</div>
 <footer>データ: FRED・米財務省・Yahoo Finance・multpl.com。判定は目安であり、投資助言ではありません。個々のしきい値は monitor.py で調整できます。</footer></main></body></html>"""
 
 
