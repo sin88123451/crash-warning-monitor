@@ -187,6 +187,24 @@ def safe(fn):
         return e
 
 
+def backup_previous():
+    """上書きする前に、前回のダッシュボード(html)とデータ(json)を backup/ に退避する。
+    ファイル名は前回の更新日時（data.json の updated）。同名があれば上書きしない。"""
+    old_html, old_json = HERE / "dashboard.html", HERE / "data.json"
+    if not old_html.exists():
+        return
+    try:
+        stamp = json.loads(old_json.read_text(encoding="utf-8"))["updated"]
+    except Exception:
+        stamp = dt.datetime.fromtimestamp(old_html.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+    stamp = stamp.replace(" ", "_").replace(":", "")
+    dest = HERE / "backup"
+    dest.mkdir(exist_ok=True)
+    for src, ext in ((old_html, "html"), (old_json, "json")):
+        if src.exists() and not (dest / f"{stamp}.{ext}").exists():
+            (dest / f"{stamp}.{ext}").write_bytes(src.read_bytes())
+
+
 def main():
     load_env()
     items = []
@@ -349,6 +367,7 @@ def main():
 
     mv = safe(moves); nv = safe(nikkei_vol)
     out = dict(updated=dt.datetime.now().strftime("%Y-%m-%d %H:%M"), items=items, moves=mv if not isinstance(mv, Exception) else [], nikkei_vol=nv if not isinstance(nv, Exception) else f"取得失敗: {nv}")
+    backup_previous()
     (HERE / "data.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     (HERE / "dashboard.html").write_text(render(out), encoding="utf-8")
     for i in items:
