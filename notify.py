@@ -28,10 +28,19 @@ def success_mail():
         for i in items:
             if i["status"] == st:
                 lines.append(f"【{LABEL[st]}】{i['name']}  {i['value'] or '—'}\n    {i['note']}" + (f"（{i['asof']}時点）" if i.get("asof") else ""))
+    mv = []
+    for m in d.get("moves", []):
+        if m["status"] == "na":
+            mv.append(f"  {m['name']}: 取得失敗")
+        else:
+            mv.append(f"  {m['name']}: 1年高値から {m['dd']:+.1f}%（1週 {m['w1']:+.1f}% ／ 1か月 {m['m1']:+.1f}%）")
+    NL = chr(10)
+    moves_text = (NL + NL + "■ 価格の動き（1年高値からの下落率）" + NL + NL.join(mv) + NL + "  " + d.get("nikkei_vol", "")) if mv else ""
     body = (
         f"暴落警戒モニターの週次更新が完了しました（{d['updated']}）。\n\n"
         f"■ 総合: {head}\n   危険 {cnt['bad']} ／ 注意 {cnt['warn']} ／ 平常 {cnt['ok']} ／ 取得失敗 {cnt['na']}\n\n"
         + "\n".join(lines)
+        + moves_text
         + f"\n\n■ 手動確認: 米国信用買い残（FINRA Margin Statistics。月次、毎月第3週ごろ更新）\n\n"
         f"各指標の見方・リンク・グラフ: {PAGE}\n\n"
         "※判定は目安であり、投資助言ではありません。\n"

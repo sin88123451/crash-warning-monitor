@@ -14,3 +14,4 @@
 - 公開ページ: https://sin88123451.github.io/crash-warning-monitor/ （公開リポジトリ sin88123451/crash-warning-monitor、毎週日曜 7:00 日本時間に Actions で更新し、結果をメール通知）
 - 裁定買い残 = nikkei225jp.com の saitei ページ用データ(週次・金額)。取得にはReferer指定が必要（2026-11-14追加）
 - メール通知: notify.py。Secret は SMTP_USER / SMTP_PASSWORD（一括更新ツール set_mail_password.ps1 で登録）と MAIL_TO（送信先。公開リポジトリのためSecretで渡す）
+- 価格の動き欄(S&P500・ナスダック・日経・NVIDIA・ゴールド・東証REIT・不動産3社の高値比)、日経の日次変動、日本の長期金利(FRED月次)、見立ての検証(HYPOTHESES)を追加（2026-11-14）。売り出し在庫・成約価格は手動確認（東日本レインズ）

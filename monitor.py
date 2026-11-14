@@ -119,6 +119,45 @@ def touraku25():
     return out
 
 
+MOVES = [
+    ("main", "S&P500", "%5EGSPC"), ("main", "ナスダック", "%5EIXIC"), ("main", "日経225", "%5EN225"),
+    ("main", "NVIDIA", "NVDA"), ("main", "ゴールド（先物・ドル）", "GC%3DF"),
+    ("prop", "東証REIT（ETF 1343）", "1343.T"), ("prop", "三井不動産（8801）", "8801.T"),
+    ("prop", "三菱地所（8802）", "8802.T"), ("prop", "住友不動産（8830）", "8830.T"),
+]
+
+
+def moves():
+    """価格の動き: 高値（過去1年）からの下落率と1週・1か月・3か月の騰落率"""
+    out = []
+    for grp, name, sym in MOVES:
+        try:
+            r = yahoo(sym, "1y")
+            c = [x[1] for x in r]; last = c[-1]
+            hi = max(c); hi_d = r[c.index(hi)][0]
+            dd = (last / hi - 1) * 100
+            chg = lambda n: (last / c[-n - 1] - 1) * 100 if len(c) > n else None
+            st = BAD if dd <= -20 else WARN if dd <= -10 else OK
+            out.append(dict(group=grp, name=name, status=st, last=last, asof=r[-1][0], hi=hi, hi_date=hi_d,
+                            dd=dd, w1=chg(5), m1=chg(21), m3=chg(63)))
+        except Exception as e:  # noqa
+            out.append(dict(group=grp, name=name, status=NA, error=str(e)))
+    return out
+
+
+def nikkei_vol():
+    """日経225の日次変動の大きさ（円と率）"""
+    r = yahoo("%5EN225", "2y")
+    ch = [(r[i][0], r[i][1] - r[i - 1][1], (r[i][1] / r[i - 1][1] - 1) * 100) for i in range(1, len(r))]
+    import statistics as stt
+    rec = ch[-60:]
+    sd60 = stt.pstdev([x[2] for x in rec]); sd2y = stt.pstdev([x[2] for x in ch])
+    worst = min(rec, key=lambda x: x[2])
+    return (f"日経225の日次変動（標準偏差）: 直近60営業日 {sd60:.2f}% ／ 過去2年 {sd2y:.2f}%。"
+            f"直近60営業日で±3%超の日は{sum(abs(x[2]) > 3 for x in rec)}回、±1,000円超は{sum(abs(x[1]) > 1000 for x in rec)}回。"
+            f"最大の下落は {worst[0]} の{worst[1]:+,.0f}円（{worst[2]:+.1f}%）。")
+
+
 def shiller_pe():
     h = get("https://www.multpl.com/shiller-pe")
     m = re.search(r'id="current".*?([\d]{2}\.\d{1,2})', h, re.S)
@@ -298,7 +337,18 @@ def main():
             st, note = OK, f"52週ピーク{peak:.2f}兆円（{w[peak_i][0]}）から{drop:.0f}%減。ピーク圏を維持"
         items.append(item("裁定買い残（日本株）", v, st, note, ab, "兆円", asof=ab[-1][0], howto=how))
 
-    out = dict(updated=dt.datetime.now().strftime("%Y-%m-%d %H:%M"), items=items)
+    # 9. 日本の長期金利（住宅ローン金利・不動産の先行）
+    how = "日本の10年国債利回りの上昇は、変動・固定の住宅ローン金利や不動産の購入余力に響く。月次データ"
+    if isinstance(jp, Exception) or not jp:
+        items.append(item("日本の長期金利（10年）", None, NA, f"取得失敗: {jp}", howto=how))
+    else:
+        v = jp[-1][1]; m3 = back(jp, 90)
+        ch = v - m3 if m3 is not None else 0
+        st = BAD if ch >= 0.6 else WARN if ch >= 0.3 else OK
+        items.append(item("日本の長期金利（10年）", v, st, f"3か月前比 {ch:+.2f}pt（+0.3ptで注意、+0.6ptで危険は目安）", jp, "%", asof=jp[-1][0], howto=how))
+
+    mv = safe(moves); nv = safe(nikkei_vol)
+    out = dict(updated=dt.datetime.now().strftime("%Y-%m-%d %H:%M"), items=items, moves=mv if not isinstance(mv, Exception) else [], nikkei_vol=nv if not isinstance(nv, Exception) else f"取得失敗: {nv}")
     (HERE / "data.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     (HERE / "dashboard.html").write_text(render(out), encoding="utf-8")
     for i in items:
@@ -345,6 +395,10 @@ GUIDE = {
         why="裁定取引（先物売り＋現物買い）に伴う現物株の買い残高。海外勢の先物買いに連動して積み上がるため、海外勢の日本株への姿勢を映す。",
         where=[("世界の株価（nikkei225jp.com）裁定買い残", "https://nikkei225jp.com/data/saitei.php"), ("トレーダーズ・ウェブ／株探の市場ニュース（毎週公表）", "https://kabutan.jp/")],
         sign="裁定買い残がピークアウトして減少に転じると、海外勢の日本株売りが始まった合図。※本ツールは週次の金額（兆円）を同サイトから読み取っており、サイト仕様が変わると取得できなくなることがある。"),
+    "日本の長期金利（10年）": dict(
+        why="日本の10年国債利回り。住宅ローン金利や不動産の購入余力に直結し、借入額の大きい湾岸の高額マンションほど影響が大きい。",
+        where=[("FRED: IRLTLT01JPM156N（月次）", FRED + "IRLTLT01JPM156N"), ("TradingView: JP10Y", TV + "TVC-JP10Y/")],
+        sign="数か月で金利が急上昇し、住宅ローン金利の上昇観測が強まると、不動産の売り出し在庫が増えやすい。※本ツールの値は月次で、日次の動きは TradingView で確認する。"),
     "日米10年債利回り差": dict(
         why="ドル円を動かす日米の金利差。差が縮むと急速な円高になりやすく、日本の輸出企業の株に逆風になる。",
         where=[("TradingView: US10Y-JP10Y と入力", TV + "TVC-US10Y/")],
@@ -378,6 +432,57 @@ def spark(vals, color):
     return f'<svg viewBox="0 0 240 48" class="sp"><polyline points="{pts}" fill="none" stroke="{color}" stroke-width="1.6"/></svg>'
 
 
+def moves_html(d):
+    def row(m):
+        if m["status"] == NA:
+            return f'<tr><td>{m["name"]}</td><td colspan="5" class="mute">取得失敗: {m.get("error", "")}</td></tr>'
+        f = lambda x: "—" if x is None else f"{x:+.1f}%"
+        return (f'<tr class="{m["status"]}"><td>{m["name"]}</td><td class="num">{m["last"]:,.1f}</td>'
+                f'<td class="num dd">{m["dd"]:+.1f}%<span class="sub">{m["hi_date"]}</span></td>'
+                f'<td class="num">{f(m["w1"])}</td><td class="num">{f(m["m1"])}</td><td class="num">{f(m["m3"])}</td></tr>')
+
+    def table(grp):
+        rows = "".join(row(m) for m in d.get("moves", []) if m["group"] == grp)
+        return ('<div class="tw"><table><thead><tr><th>対象</th><th>最新</th><th>1年高値から</th><th>1週</th><th>1か月</th><th>3か月</th></tr></thead>'
+                f'<tbody>{rows}</tbody></table></div>')
+
+    return (
+        '<h2 class="sec">価格の動き（すでにどれだけ下がったか）</h2>'
+        + table("main")
+        + f'<p class="small">{d.get("nikkei_vol", "")}</p>'
+        + '<details class="g" open><summary>何のために・どこを見るか</summary>'
+        '<p><b>何のために</b><br>上の指標は「下げやすさ」を見るものが中心です。ここでは、すでに下落が始まっているかを、高値からの下落率で確かめます。10%以上下がると「調整局面」、20%以上で「弱気相場の水準」が目安です。</p>'
+        '<p><b>どこを見るか</b><br>Yahoo Finance / TradingView で各銘柄のチャートを見る。</p>'
+        '<p><b>見るべきポイント</b><br>特定の銘柄だけが下がっているのか、指数全体に広がっているのかを見る。S&amp;P500 が −10% を超えて下がると、広がりが出てきたサイン。</p></details>'
+        '<h2 class="sec">不動産の指標（湾岸の高額マンションの先行指標として）</h2>'
+        + table("prop")
+        + '<details class="g" open><summary>何のために・どこを見るか</summary>'
+        '<p><b>何のために</b><br>マンションの売買は、すぐに価格に表れません。株式市場に上場している不動産会社やREITは毎日値が付くため、不動産の変化を早く映しやすい先行指標になります。</p>'
+        '<p><b>どこを見るか</b><br>株価・REIT: 上の表。売り出し在庫・成約価格・成約までの期間: <a href="https://www.reins.or.jp/" target="_blank" rel="noopener">東日本レインズ（月例マーケットウォッチ）</a>など（月次・手動確認。本ツールは自動取得していません）。住宅ローンの金利: 上の「日本の長期金利」。</p>'
+        '<p><b>見るべきポイント</b><br>不動産株・REITが高値から10〜20%下がり、金利が上がり、売り出し在庫が増え続けて成約までの期間が延びると、下落が広がりやすい。逆に在庫が減り、成約価格が下げ止まれば、底打ちのサイン。</p></details>'
+    )
+
+
+HYPOTHESES = [
+    ("見立て①: 湾岸の高額マンションの弱さは、下落の予兆だ",
+     ["不動産株・REITが1年高値から10%以上下がった状態が続く", "日本の長期金利がさらに上がる", "売り出し在庫が増え続け、成約までの期間が延びる", "成約価格（売り出し価格ではなく）が前年を下回る"],
+     ["売り出し在庫が減り始め、成約価格が下げ止まる", "不動産株・REITが高値圏を回復する", "日本の長期金利の上昇が止まる"]),
+    ("見立て②: 米国株全体の下落が始まった",
+     ["S&P500が1年高値から10%以上下がる", "ハイイールド債スプレッドが3.5〜4%を超える", "VIXが30を超える", "RSP/SPYが反転して下がり始める"],
+     ["S&P500が高値を更新する", "ハイイールド債スプレッドが3.2%前後で落ち着いたまま", "NVIDIAの決算後にナスダックが高値圏へ戻る"]),
+]
+
+
+def hypotheses_html():
+    def ul(xs):
+        return "<ul>" + "".join(f"<li>{x}</li>" for x in xs) + "</ul>"
+    cards = "".join(f'<section class="card na"><h2>{t}</h2><p><b>強まる条件</b></p>{ul(a)}<p><b>外れる条件</b></p>{ul(b)}</section>' for t, a, b in HYPOTHESES)
+    return ('<h2 class="sec">見立ての検証（外れる条件を先に決めておく）</h2>'
+            '<p class="small">自分の見立てに合う情報だけを集めてしまう「確認バイアス」を避けるため、強まる条件と外れる条件を先に書いておきます。'
+            '次の見直し日は2027年2月（目安）。条件は monitor.py の HYPOTHESES で書き換えられます。</p>'
+            f'<div class="grid">{cards}</div>')
+
+
 def render(d):
     cnt = {k: sum(1 for i in d["items"] if i["status"] == k) for k in (OK, WARN, BAD, NA)}
     head = "危険サインが点灯中" if cnt[BAD] >= 2 else "一部で注意サイン" if cnt[BAD] + cnt[WARN] else "目立った危険サインなし"
@@ -404,10 +509,12 @@ main{{max-width:980px;margin:0 auto;padding:16px}}h1{{font-size:22px;margin:8px 
 .badge{{font-size:12px;padding:1px 9px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}}
 .ok .badge{{color:var(--ok)}}.warn .badge{{color:var(--warn)}}.bad .badge{{color:var(--bad)}}.na .badge{{color:var(--mute)}}
 .val{{font-size:30px;font-weight:700;margin:4px 0}}.note{{font-size:13px}}.sp{{width:100%;height:48px;margin-top:6px}}
-.how,.asof{{font-size:12px;color:var(--mute);margin-top:6px}}details.g{{margin-top:8px;font-size:13px}}details.g summary{{cursor:pointer;color:var(--mute)}}details.g p{{margin:6px 0}}a{{color:inherit;text-decoration:underline}}.sec{{font-size:16px;margin:22px 0 8px}}footer{{color:var(--mute);font-size:12px;margin-top:18px}}
+.how,.asof{{font-size:12px;color:var(--mute);margin-top:6px}}details.g{{margin-top:8px;font-size:13px}}details.g summary{{cursor:pointer;color:var(--mute)}}details.g p{{margin:6px 0}}a{{color:inherit;text-decoration:underline}}.sec{{font-size:16px;margin:22px 0 8px}}table{{width:100%;border-collapse:collapse;font-size:13px}}th,td{{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}}.num{{text-align:right;white-space:nowrap}}.tw{{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:10px}}tr.bad td.dd{{color:var(--bad);font-weight:700}}tr.warn td.dd{{color:var(--warn);font-weight:700}}tr.ok td.dd{{color:var(--ok)}}.sub{{display:block;font-size:11px;color:var(--mute)}}.mute{{color:var(--mute)}}.small{{font-size:12px;color:var(--mute);margin:6px 2px}}ul{{margin:4px 0 8px;padding-left:20px;font-size:13px}}footer{{color:var(--mute);font-size:12px;margin-top:18px}}
 </style></head><body><main><h1>暴落警戒モニター</h1>
 <div class="sum">{head}（危険 {cnt[BAD]} ／ 注意 {cnt[WARN]} ／ 平常 {cnt[OK]} ／ 取得失敗 {cnt[NA]}）　更新 {d['updated']}</div>
 <div class="grid">{cards}</div>
+{moves_html(d)}
+{hypotheses_html()}
 <h2 class="sec">自動取得していない指標（手動で確認）</h2><div class="grid">{manual}</div>
 <footer>データ: FRED・米財務省・Yahoo Finance・multpl.com。判定は目安であり、投資助言ではありません。個々のしきい値は monitor.py で調整できます。</footer></main></body></html>"""
 
